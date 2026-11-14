@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14532d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bytter">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>Bytte-timer</title>
+<style>
+  :root {
+    --bg: #f3f6f4;
+    --card: #ffffff;
+    --text: #0f1f17;
+    --muted: #5b6b62;
+    --line: #dde5e0;
+    --green: #15803d;
+    --green-dark: #14532d;
+    --green-soft: #dcfce7;
+    --in: #15803d;
+    --out: #b91c1c;
+    --warn: #f59e0b;
+    --warn-soft: #fef3c7;
+    --bench-soft: #eef2f0;
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b130f;
+      --card: #14201a;
+      --text: #ecf3ef;
+      --muted: #9db0a5;
+      --line: #24342b;
+      --green: #22c55e;
+      --green-dark: #0f3a22;
+      --green-soft: #133824;
+      --in: #4ade80;
+      --out: #f87171;
+      --warn-soft: #3b2d0c;
+      --bench-soft: #1b2922;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  .hidden { display: none !important; }
+
+  header {
+    background: var(--green-dark);
+    color: #fff;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    display: flex; align-items: center; gap: 12px;
+    position: sticky; top: 0; z-index: 5;
+  }
+  header .match { flex: 1; min-width: 0; font-weight: 700; font-size: 1.05rem; line-height: 1.2; }
+  header .match .vs { opacity: .7; font-weight: 500; margin: 0 6px; }
+  header .match span { overflow-wrap: anywhere; }
+  .icon-btn {
+    background: rgba(255,255,255,.15); border: 0; color: #fff;
+    width: 44px; height: 44px; border-radius: 12px; font-size: 1.3rem; flex: none;
+  }
+
+  main { max-width: 560px; margin: 0 auto; padding: 14px 16px 32px; }
+  .card {
+    background: var(--card); border-radius: 16px; box-shadow: var(--shadow);
+    padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--line);
+  }
+  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; font-weight: 700; }
+
+  /* Klokke */
+  .clock { text-align: center; padding-top: 18px; }
+  .clock .time { font-size: 4.2rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; letter-spacing: -.02em; }
+  .clock .total { color: var(--muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .bar { position: relative; height: 10px; background: var(--bench-soft); border-radius: 99px; margin: 14px 0 4px; overflow: hidden; }
+  .bar .fill { position: absolute; inset: 0 auto 0 0; background: var(--green); border-radius: 99px; width: 0; }
+  .bar .tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--card); opacity: .9; }
+
+  .controls { display: flex; gap: 10px; margin-top: 14px; }
+  .btn {
+    border: 0; border-radius: 14px; padding: 16px; font-weight: 700; font-size: 1.15rem;
+    background: var(--bench-soft); color: var(--text);
+  }
+  .btn.primary { background: var(--green); color: #fff; flex: 1; }
+  .btn.primary.pause { background: var(--warn); color: #1f1500; }
+  .btn:disabled { opacity: .45; }
+
+  /* Neste bytte */
+  .next { transition: background .3s, border-color .3s; }
+  .next.soon { background: var(--warn-soft); border-color: var(--warn); }
+  .next .row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .next .count { font-size: 2.2rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .swap { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .swap div { border-radius: 12px; padding: 10px 12px; font-weight: 700; font-size: 1.1rem; }
+  .swap .lbl { display: block; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
+  .swap .in { background: color-mix(in srgb, var(--in) 14%, transparent); color: var(--in); }
+  .swap .out { background: color-mix(in srgb, var(--out) 12%, transparent); color: var(--out); }
+  .msg { font-weight: 700; font-size: 1.15rem; }
+
+  /* Spillerlister */
+  .players { list-style: none; margin: 0; padding: 0; }
+  .players li {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 12px; border-radius: 12px; margin-bottom: 6px; font-weight: 600; font-size: 1.1rem;
+  }
+  .players.field li { background: var(--green-soft); }
+  .players.bench li { background: var(--bench-soft); }
+  .players li .t { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 500; font-size: .95rem; }
+  .players li .tag { font-size: .75rem; font-weight: 700; color: var(--muted); margin-left: 8px; }
+  .players li.empty { background: none; color: var(--muted); font-weight: 400; font-size: .95rem; padding-left: 0; }
+
+  /* Bytteplan */
+  details summary { cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::after { content: "▾"; color: var(--muted); transition: transform .2s; }
+  details[open] summary::after { transform: rotate(180deg); }
+  .plan { list-style: none; padding: 0; margin: 10px 0 0; }
+  .plan li { display: grid; grid-template-columns: 52px 1fr; gap: 8px; padding: 8px 10px; border-radius: 10px; font-size: .95rem; }
+  .plan li.now { background: var(--green-soft); font-weight: 600; }
+  .plan li.done { opacity: .5; }
+  .plan .when { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .plan .i { color: var(--in); } .plan .o { color: var(--out); }
+  .totals { margin-top: 10px; font-size: .9rem; color: var(--muted); line-height: 1.6; }
+
+  /* Varsel */
+  .alert {
+    position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; justify-content: center; align-items: center;
+    background: var(--warn); color: #1f1500; text-align: center; padding: 24px;
+    animation: flash 1s ease-in-out 4;
+  }
+  @keyframes flash { 50% { background: #fde68a; } }
+  .alert .big { font-size: 3rem; font-weight: 900; letter-spacing: .02em; }
+  .alert .line { font-size: 1.8rem; font-weight: 800; margin: 8px 0; overflow-wrap: anywhere; }
+  .alert .line small { display: block; font-size: .9rem; text-transform: uppercase; letter-spacing: .08em; opacity: .75; }
+  .alert .hint { margin-top: 24px; opacity: .75; }
+
+  /* Innstillinger */
+  label.field { display: block; margin-bottom: 12px; }
+  label.field span { display: block; font-size: .9rem; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
+  .input {
+    width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--bg); font-size: 1.05rem;
+  }
+  .input:focus { outline: 2px solid var(--green); border-color: transparent; }
+  .order { list-style: none; padding: 0; margin: 0 0 10px; }
+  .order li { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .order li .n { width: 24px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .order li .name { flex: 1; font-weight: 600; font-size: 1.05rem; overflow-wrap: anywhere; }
+  .sm {
+    width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg);
+    font-size: 1.1rem; flex: none;
+  }
+  .sm:disabled { opacity: .3; }
+  .sm.del { color: var(--out); }
+  .addrow { display: flex; gap: 8px; }
+  .addrow .btn { padding: 12px 16px; font-size: 1rem; white-space: nowrap; }
+  .stepper { display: flex; align-items: center; gap: 12px; }
+  .stepper .val { min-width: 40px; text-align: center; font-size: 1.4rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .setrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; }
+  .setrow .lbl { font-weight: 600; }
+  .setrow .lbl small { display: block; color: var(--muted); font-weight: 400; font-size: .85rem; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .note { color: var(--muted); font-size: .9rem; margin: 4px 0 0; }
+  .error { color: var(--out); font-weight: 600; margin: 8px 0 0; }
+  .warnbox { background: var(--warn-soft); border: 1px solid var(--warn); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-size: .95rem; }
+  .linkbtn { background: none; border: 0; color: var(--muted); text-decoration: underline; padding: 12px 0; width: 100%; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="match" id="matchTitle"></div>
+  <button class="icon-btn" id="settingsBtn" aria-label="Innstillinger">⚙︎</button>
+</header>
+
+<!-- ===================== KAMPVISNING ===================== -->
+<main id="matchView">
+  <section class="card clock">
+    <div class="time" id="clock">0:00</div>
+    <div class="total" id="clockTotal"></div>
+    <div class="bar" id="bar"><div class="fill" id="barFill"></div></div>
+    <div class="controls">
+      <button class="btn" id="resetBtn" aria-label="Nullstill">↺ Nullstill</button>
+      <button class="btn primary" id="startBtn">▶ Start</button>
+    </div>
+  </section>
+
+  <section class="card next" id="nextCard"></section>
+
+  <section class="card">
+    <h2 id="fieldTitle">På banen</h2>
+    <ul class="players field" id="fieldList"></ul>
+    <h2 style="margin-top:14px">Benken</h2>
+    <ul class="players bench" id="benchList"></ul>
+  </section>
+
+  <section class="card">
+    <details id="planDetails">
+      <summary>Bytteplan</summary>
+      <ul class="plan" id="planList"></ul>
+      <div class="totals" id="planTotals"></div>
+    </details>
+  </section>
+</main>
+
+<!-- ===================== INNSTILLINGER ===================== -->
+<main id="settingsView" class="hidden">
+  <div class="warnbox hidden" id="runningWarn">Kampklokka er startet. Lagrer du endringer, blir den nullstilt.</div>
+
+  <section class="card">
+    <h2>Kamp</h2>
+    <label class="field"><span>Eget lag</span><input class="input" id="sHome" maxlength="30" autocomplete="off"></label>
+    <label class="field"><span>Motstander</span><input class="input" id="sAway" maxlength="30" autocomplete="off"></label>
+    <div class="two">
+      <label class="field"><span>Kamplengde (min)</span><input class="input" id="sMatch" inputmode="decimal" autocomplete="off"></label>
+      <label class="field"><span>Tid mellom bytter (min)</span><input class="input" id="sInterval" inputmode="decimal" autocomplete="off"></label>
+    </div>
+    <p class="note" id="sSummary"></p>
+  </section>
+
+  <section class="card">
+    <h2>Spillere og bytterekkefølge</h2>
+    <p class="note" style="margin:0 0 8px">De første i lista starter på banen. Rekkefølgen brukes for alle bytter i kampen.</p>
+    <ul class="order" id="sPlayers"></ul>
+    <div class="addrow">
+      <input class="input" id="sNewPlayer" placeholder="Nytt navn" maxlength="20" autocomplete="off" enterkeyhint="done">
+      <button class="btn" id="sAddPlayer">Legg til</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Antall spillere</h2>
+    <div class="setrow">
+      <div class="lbl">På banen<small id="sSquadInfo"></small></div>
+      <div class="stepper">
+        <button class="sm" data-step="onField" data-d="-1" aria-label="Færre">−</button>
+        <span class="val" id="sOnField">3</span>
+        <button class="sm" data-step="onField" data-d="1" aria-label="Flere">+</button>
+      </div>
+    </div>
+    <div class="setrow">
+      <div class="lbl">Bytter om gangen<small>Hvor mange som går inn ved hvert bytte</small></div>
+      <div class="stepper">
+        <button class="sm" data-step="perSwap" data-d="-1" aria-label="Færre">−</button>
+        <span class="val" id="sPerSwap">1</span>
+        <button class="sm" data-step="perSwap" data-d="1" aria-label="Flere">+</button>
+      </div>
+    </div>
+  </section>
+
+  <p class="error hidden" id="sError"></p>
+  <div class="controls">
+    <button class="btn" id="sCancel">Avbryt</button>
+    <button class="btn primary" id="sSave">Lagre</button>
+  </div>
+  <button class="linkbtn" id="sDefaults">Tilbakestill til standard</button>
+</main>
+
+<div class="alert hidden" id="alert" role="alert"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- Standardoppsett ----------
+  const DEFAULTS = {
+    home: 'Vårt lag',
+    away: 'Motstander',
+    players: ['Olav', 'Thilo', 'Iver', 'Ibrahim', 'Herman'],
+    onField: 3,
+    perSwap: 1,
+    matchSec: 9 * 60,
+    intervalSec: 90,
+  };
+  const NEW_MATCH = { running: false, startedAt: 0, elapsedBefore: 0, alerted: 0, warned: 0 };
+  const LS_SETTINGS = 'fbt.settings.v1';
+  const LS_MATCH = 'fbt.match.v1';
+  const WARN_SEC = 10;   // forvarsel før bytte
+  const ALERT_MS = 12000; // hvor lenge byttevarselet vises
+
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  function load(key, def) {
+    try {
+      const v = JSON.parse(localStorage.getItem(key));
+      return v && typeof v === 'object' ? { ...clone(def), ...v } : clone(def);
+    } catch { return clone(def); }
+  }
+  function store(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }
+
+  let S = sanitize(load(LS_SETTINGS, DEFAULTS));
+  let M = load(LS_MATCH, NEW_MATCH);
+
+  function sanitize(s) {
+    if (!Array.isArray(s.players)) s.players = clone(DEFAULTS.players);
+    s.players = s.players.map(String).filter(Boolean);
+    s.onField = Math.max(1, Math.round(+s.onField || 1));
+    s.perSwap = Math.max(1, Math.round(+s.perSwap || 1));
+    s.matchSec = Math.max(30, Math.round(+s.matchSec || DEFAULTS.matchSec));
+    s.intervalSec = Math.max(10, Math.round(+s.intervalSec || DEFAULTS.intervalSec));
+    return s;
+  }
+
+  // ---------- Byttelogikk ----------
+  // Spillerlista er en ring. Ved hvert bytte roteres ringen med "perSwap" plasser:
+  // de som har vært lengst på banen går ut, de som har ventet lengst går inn.
+  const onFieldCount = (s = S) => Math.min(s.onField, s.players.length);
+  const swapCount = (s = S) => Math.max(0, Math.min(s.perSwap, s.players.length - onFieldCount(s)));
+
+  function switchTimes(s = S) {
+    const out = [];
+    if (swapCount(s) === 0) return out;
+    for (let i = 1; i * s.intervalSec < s.matchSec; i++) out.push(i * s.intervalSec);
+    return out;
+  }
+  function periodAt(sec, s = S) {
+    return switchTimes(s).filter((t) => t <= sec).length;
+  }
+  function lineup(p, s = S) {
+    const n = s.players.length;
+    if (!n) return { field: [], bench: [] };
+    const k = onFieldCount(s);
+    const shift = (p * swapCount(s)) % n;
+    const ring = s.players.slice(shift).concat(s.players.slice(0, shift));
+    return { field: ring.slice(0, k), bench: ring.slice(k) };
+  }
+  function changes(fromP, toP) {
+    const a = lineup(fromP).field, b = lineup(toP).field;
+    return { in: b.filter((x) => !a.includes(x)), out: a.filter((x) => !b.includes(x)) };
+  }
+  function playTimes(sec, s = S) {
+    const t = Object.fromEntries(s.players.map((p) => [p, 0]));
+    const bounds = [0, ...switchTimes(s), s.matchSec];
+    for (let i = 0; i < bounds.length - 1; i++) {
+      const a = bounds[i], b = Math.min(bounds[i + 1], sec);
+      if (b <= a) break;
+      lineup(i, s).field.forEach((n) => (t[n] += b - a));
+    }
+    return t;
+  }
+
+  // ---------- Klokke ----------
+  function elapsedMs() {
+    const e = M.elapsedBefore + (M.running ? Date.now() - M.startedAt : 0);
+    return Math.min(e, S.matchSec * 1000);
+  }
+  const ended = () => !M.running && M.elapsedBefore >= S.matchSec * 1000;
+
+  function fmt(sec) {
+    sec = Math.max(0, Math.floor(sec + 1e-6));
+    return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+  }
+  function fmtCountdown(sec) { return fmt(Math.ceil(sec - 1e-6)); }
+  function fmtMin(sec) {
+    return (Math.round(sec / 6) / 10).toLocaleString('no-NO') + ' min';
+  }
+
+  // ---------- Lyd, vibrasjon, skjermlås ----------
+  let audio = null;
+  function unlockAudio() {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      if (audio.state === 'suspended') audio.resume();
+    } catch {}
+  }
+  function beep(pattern) {
+    if (!audio) return;
+    let t = audio.currentTime + 0.02;
+    for (const [freq, dur, gap] of pattern) {
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = 'square'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.25, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(audio.destination);
+      o.start(t); o.stop(t + dur + 0.02);
+      t += dur + gap;
+    }
+  }
+  const vibrate = (p) => { try { navigator.vibrate && navigator.vibrate(p); } catch {} };
+
+  let wakeLock = null;
+  async function lockScreen() {
+    try { if ('wakeLock' in navigator && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } } catch {}
+  }
+  function unlockScreen() { try { wakeLock && wakeLock.release(); } catch {} wakeLock = null; }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') { if (M.running) lockScreen(); tick(); }
+  });
+
+  // ---------- Varsler ----------
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let alertTimer = null;
+
+  function showAlert(html, ms = ALERT_MS) {
+    const el = $('alert');
+    el.innerHTML = html + '<div class="hint">Trykk for å lukke</div>';
+    el.classList.remove('hidden');
+    el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+    clearTimeout(alertTimer);
+    alertTimer = setTimeout(hideAlert, ms);
+  }
+  function hideAlert() { $('alert').classList.add('hidden'); clearTimeout(alertTimer); }
+  $('alert').addEventListener('click', hideAlert);
+
+  function switchAlert(fromP, toP) {
+    const c = changes(fromP, toP);
+    showAlert(
+      '<div class="big">BYTT NÅ!</div>' +
+      '<div class="line"><small>Inn ↑</small>' + esc(c.in.join(', ')) + '</div>' +
+      '<div class="line"><small>Ut ↓</small>' + esc(c.out.join(', ')) + '</div>'
+    );
+    beep([[880, 0.18, 0.08], [880, 0.18, 0.08], [1320, 0.4, 0]]);
+    vibrate([400, 150, 400, 150, 600]);
+  }
+  function endAlert() {
+    showAlert('<div class="big">SLUTT!</div><div class="line">Kampen er ferdig</div>', 8000);
+    beep([[660, 0.3, 0.1], [520, 0.3, 0.1], [440, 0.7, 0]]);
+    vibrate([800, 200, 800]);
+  }
+
+  // ---------- Tikk ----------
+  function tick() {
+    if (M.running && Date.now() - M.startedAt + M.elapsedBefore >= S.matchSec * 1000) {
+      M.running = false;
+      M.elapsedBefore = S.matchSec * 1000;
+      store(LS_MATCH, M);
+      unlockScreen();
+      endAlert();
+    }
+    const e = elapsedMs() / 1000;
+    const p = periodAt(e);
+    if (p > M.alerted) {
+      const from = M.alerted;
+      M.alerted = p;
+      store(LS_MATCH, M);
+      if (!ended()) switchAlert(from, p);
+    }
+    const next = switchTimes()[p];
+    if (M.running && next !== undefined && next - e <= WARN_SEC && M.warned < p + 1) {
+      M.warned = p + 1;
+      store(LS_MATCH, M);
+      beep([[988, 0.12, 0]]);
+      vibrate(150);
+    }
+    renderMatch(e, p);
+  }
+
+  // ---------- Visning: kamp ----------
+  function renderHeader() {
+    $('matchTitle').innerHTML = '<span>' + esc(S.home || 'Vårt lag') + '</span><span class="vs">–</span><span>' + esc(S.away || 'Motstander') + '</span>';
+    document.title = (S.home || 'Bytte-timer') + ' – ' + (S.away || '');
+  }
+
+  function renderBarTicks() {
+    const bar = $('bar');
+    bar.querySelectorAll('.tick').forEach((t) => t.remove());
+    for (const t of switchTimes()) {
+      const d = document.createElement('div');
+      d.className = 'tick';
+      d.style.left = (t / S.matchSec * 100) + '%';
+      bar.appendChild(d);
+    }
+  }
+
+  let lastPlanKey = '';
+  function renderMatch(e, p) {
+    $('clock').textContent = fmt(e);
+    $('clockTotal').textContent = 'av ' + fmt(S.matchSec);
+    $('barFill').style.width = (e / S.matchSec * 100) + '%';
+
+    const sb = $('startBtn');
+    sb.disabled = ended();
+    sb.classList.toggle('pause', M.running);
+    sb.textContent = ended() ? 'Ferdig' : M.running ? '❚❚ Pause' : (e > 0 ? '▶ Fortsett' : '▶ Start');
+    $('resetBtn').disabled = e === 0 && !M.running;
+
+    // Neste bytte
+    const times = switchTimes();
+    const next = times[p];
+    const card = $('nextCard');
+    if (ended()) {
+      card.className = 'card next';
+      card.innerHTML = '<div class="msg">Kampen er ferdig 🎉</div>';
+    } else if (!S.players.length) {
+      card.className = 'card next';
+      card.innerHTML = '<div class="msg">Legg til spillere i innstillingene ⚙︎</div>';
+    } else if (next === undefined) {
+      card.className = 'card next';
+      card.innerHTML = '<h2>Neste bytte</h2><div class="msg">' +
+        (times.length ? 'Ingen flere bytter denne kampen' : 'Ingen bytter – alle spiller hele kampen') + '</div>';
+    } else {
+      const left = next - e;
+      const c = changes(p, p + 1);
+      card.className = 'card next' + (M.running && left <= WARN_SEC + 5 ? ' soon' : '');
+      card.innerHTML =
+        '<div class="row"><h2>Neste bytte om</h2><div class="count">' + fmtCountdown(left) + '</div></div>' +
+        '<div class="swap">' +
+          '<div class="in"><span class="lbl">Inn ↑</span>' + esc(c.in.join(', ')) + '</div>' +
+          '<div class="out"><span class="lbl">Ut ↓</span>' + esc(c.out.join(', ')) + '</div>' +
+        '</div>';
+    }
+
+    // Banen og benken
+    const lu = lineup(p);
+    const pt = playTimes(e);
+    const upcoming = next !== undefined ? changes(p, p + 1) : { in: [], out: [] };
+    $('fieldTitle').textContent = 'På banen (' + lu.field.length + ')';
+    $('fieldList').innerHTML = lu.field.length ? lu.field.map((n) =>
+      '<li><span>' + esc(n) + (upcoming.out.includes(n) ? '<span class="tag">UT NESTE</span>' : '') +
+      '</span><span class="t">' + fmt(pt[n]) + '</span></li>').join('') : '<li class="empty">Ingen</li>';
+    $('benchList').innerHTML = lu.bench.length ? lu.bench.map((n) =>
+      '<li><span>' + esc(n) + (upcoming.in.includes(n) ? '<span class="tag">INN NESTE</span>' : '') +
+      '</span><span class="t">' + fmt(pt[n]) + '</span></li>').join('') : '<li class="empty">Ingen på benken</li>';
+
+    // Bytteplan (tegnes bare når noe endrer seg)
+    const planKey = p + '|' + ended() + '|' + JSON.stringify(S);
+    if (planKey !== lastPlanKey) {
+      lastPlanKey = planKey;
+      let html = '<li class="' + (p === 0 && !ended() ? 'now' : 'done') + '"><span class="when">0:00</span><span>Start: ' +
+        esc(lineup(0).field.join(', ')) + '</span></li>';
+      times.forEach((t, i) => {
+        const c = changes(i, i + 1);
+        const cls = ended() ? 'done' : (i + 1 === p ? 'now' : i + 1 < p ? 'done' : '');
+        html += '<li class="' + cls + '"><span class="when">' + fmt(t) + '</span><span><span class="i">↑ ' +
+          esc(c.in.join(', ')) + '</span> &nbsp; <span class="o">↓ ' + esc(c.out.join(', ')) + '</span></span></li>';
+      });
+      $('planList').innerHTML = html;
+      const total = playTimes(S.matchSec);
+      $('planTotals').innerHTML = '<strong>Planlagt spilletid:</strong><br>' +
+        S.players.map((n) => esc(n) + ' ' + fmtMin(total[n])).join(' · ');
+    }
+  }
+
+  // ---------- Knapper: kamp ----------
+  $('startBtn').addEventListener('click', () => {
+    unlockAudio();
+    if (ended()) return;
+    if (M.running) {
+      M.elapsedBefore = elapsedMs();
+      M.running = false;
+      unlockScreen();
+    } else {
+      M.startedAt = Date.now();
+      M.running = true;
+      lockScreen();
+    }
+    store(LS_MATCH, M);
+    tick();
+  });
+
+  $('resetBtn').addEventListener('click', () => {
+    if (!confirm('Nullstille kampklokka?')) return;
+    resetMatch();
+  });
+
+  function resetMatch() {
+    M = clone(NEW_MATCH);
+    store(LS_MATCH, M);
+    unlockScreen();
+    hideAlert();
+    tick();
+  }
+
+  // ---------- Innstillinger ----------
+  let D = null; // kladd
+
+  function parseMin(str) {
+    const v = parseFloat(String(str).trim().replace(',', '.'));
+    return isFinite(v) && v > 0 ? Math.round(v * 60) : NaN;
+  }
+  const minStr = (sec) => (Math.round(sec / 60 * 100) / 100).toLocaleString('no-NO');
+
+  function openSettings() {
+    D = clone(S);
+    $('sHome').value = D.home;
+    $('sAway').value = D.away;
+    $('sMatch').value = minStr(D.matchSec);
+    $('sInterval').value = minStr(D.intervalSec);
+    $('sNewPlayer').value = '';
+    $('sError').classList.add('hidden');
+    $('runningWarn').classList.toggle('hidden', elapsedMs() === 0 && !M.running);
+    renderSettings();
+    $('matchView').classList.add('hidden');
+    $('settingsView').classList.remove('hidden');
+    $('settingsBtn').classList.add('hidden');
+    window.scrollTo(0, 0);
+  }
+  function closeSettings() {
+    D = null;
+    $('settingsView').classList.add('hidden');
+    $('matchView').classList.remove('hidden');
+    $('settingsBtn').classList.remove('hidden');
+    window.scrollTo(0, 0);
+    tick();
+  }
+
+  function clampDraft() {
+    const n = D.players.length;
+    D.onField = Math.max(1, Math.min(D.onField, Math.max(1, n)));
+    D.perSwap = Math.max(1, Math.min(D.perSwap, Math.max(1, n - D.onField)));
+  }
+
+  function renderSettings() {
+    clampDraft();
+    const n = D.players.length;
+    $('sPlayers').innerHTML = D.players.map((name, i) =>
+      '<li><span class="n">' + (i + 1) + '.</span><span class="name">' + esc(name) + '</span>' +
+      '<button class="sm" data-move="' + i + '" data-d="-1" aria-label="Flytt opp"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
+      '<button class="sm" data-move="' + i + '" data-d="1" aria-label="Flytt ned"' + (i === n - 1 ? ' disabled' : '') + '>↓</button>' +
+      '<button class="sm del" data-del="' + i + '" aria-label="Fjern">✕</button></li>'
+    ).join('') || '<li><span class="note">Ingen spillere ennå</span></li>';
+
+    $('sOnField').textContent = D.onField;
+    $('sPerSwap').textContent = D.perSwap;
+    $('sSquadInfo').textContent = n + ' i troppen, ' + Math.max(0, n - D.onField) + ' på benken';
+    document.querySelector('[data-step="onField"][data-d="-1"]').disabled = D.onField <= 1;
+    document.querySelector('[data-step="onField"][data-d="1"]').disabled = D.onField >= n;
+    document.querySelector('[data-step="perSwap"][data-d="-1"]').disabled = D.perSwap <= 1;
+    document.querySelector('[data-step="perSwap"][data-d="1"]').disabled = D.perSwap >= n - D.onField;
+    renderSummary();
+  }
+
+  function renderSummary() {
+    const m = parseMin($('sMatch').value), iv = parseMin($('sInterval').value);
+    if (!m || !iv) { $('sSummary').textContent = ''; return; }
+    const tmp = sanitize({ ...clone(D), matchSec: m, intervalSec: iv });
+    const cnt = switchTimes(tmp).length;
+    $('sSummary').textContent = cnt
+      ? cnt + ' bytte' + (cnt === 1 ? '' : 'r') + ' i kampen (ved ' + switchTimes(tmp).map(fmt).join(', ') + ').'
+      : 'Ingen bytter i kampen med disse innstillingene.';
+  }
+
+  $('sPlayers').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    if (b.dataset.move !== undefined) {
+      const i = +b.dataset.move, j = i + +b.dataset.d;
+      if (j < 0 || j >= D.players.length) return;
+      [D.players[i], D.players[j]] = [D.players[j], D.players[i]];
+    } else if (b.dataset.del !== undefined) {
+      D.players.splice(+b.dataset.del, 1);
+    }
+    renderSettings();
+  });
+
+  function addPlayer() {
+    const inp = $('sNewPlayer');
+    const name = inp.value.trim().replace(/\s+/g, ' ');
+    const err = $('sError');
+    if (!name) return;
+    if (D.players.some((p) => p.toLowerCase() === name.toLowerCase())) {
+      err.textContent = name + ' finnes allerede.';
+      err.classList.remove('hidden');
+      return;
+    }
+    err.classList.add('hidden');
+    D.players.push(name);
+    inp.value = '';
+    renderSettings();
+    inp.focus();
+  }
+  $('sAddPlayer').addEventListener('click', addPlayer);
+  $('sNewPlayer').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); addPlayer(); } });
+
+  document.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => {
+    D[b.dataset.step] += +b.dataset.d;
+    renderSettings();
+  }));
+  $('sMatch').addEventListener('input', renderSummary);
+  $('sInterval').addEventListener('input', renderSummary);
+
+  $('sSave').addEventListener('click', () => {
+    const err = $('sError');
+    const matchSec = parseMin($('sMatch').value);
+    const intervalSec = parseMin($('sInterval').value);
+    let msg = '';
+    if (!matchSec || matchSec < 30) msg = 'Kamplengde må være minst 0,5 minutter.';
+    else if (!intervalSec || intervalSec < 10) msg = 'Tid mellom bytter må være minst 10 sekunder (0,17 min).';
+    else if (!D.players.length) msg = 'Legg til minst én spiller.';
+    if (msg) { err.textContent = msg; err.classList.remove('hidden'); return; }
+
+    const inProgress = elapsedMs() > 0 || M.running;
+    if (inProgress && !confirm('Kampklokka blir nullstilt. Fortsette?')) return;
+
+    D.home = $('sHome').value.trim();
+    D.away = $('sAway').value.trim();
+    D.matchSec = matchSec;
+    D.intervalSec = intervalSec;
+    S = sanitize(D);
+    store(LS_SETTINGS, S);
+    renderHeader();
+    renderBarTicks();
+    if (inProgress) resetMatch();
+    closeSettings();
+  });
+  $('sCancel').addEventListener('click', closeSettings);
+  $('sDefaults').addEventListener('click', () => {
+    if (!confirm('Tilbakestille alle innstillinger til standard?')) return;
+    D = clone(DEFAULTS);
+    $('sHome').value = D.home;
+    $('sAway').value = D.away;
+    $('sMatch').value = minStr(D.matchSec);
+    $('sInterval').value = minStr(D.intervalSec);
+    renderSettings();
+  });
+  $('settingsBtn').addEventListener('click', openSettings);
+
+  // ---------- Start ----------
+  renderHeader();
+  renderBarTicks();
+  if (M.running) lockScreen();
+  tick();
+  setInterval(tick, 250);
+
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
